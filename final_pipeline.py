@@ -169,7 +169,7 @@ def process_all_videos():
         for f in files:
             if f.endswith(('.mp4', '.avi', '.mkv')):
                 video_paths.append(os.path.join(root, f))
-                
+
     if not video_paths:
         print(f"⚠️ Không tìm thấy video nào trên Drive '{DRIVE_INPUT_FOLDER}'.")
         return
