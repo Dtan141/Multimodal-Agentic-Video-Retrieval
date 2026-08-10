@@ -37,11 +37,14 @@ def process_vector_pipeline():
 
     for drive_video_path in video_paths:
         video_file = os.path.basename(drive_video_path)
-        video_id = os.path.splitext(video_file)[0]
-        
-        # Nhận diện L28, L29... từ thư mục chứa
+        raw_video_id = os.path.splitext(video_file)[0]
         folder_chua_vid = os.path.basename(os.path.dirname(drive_video_path))
-        
+
+        if raw_video_id.startswith(f"{folder_chua_vid}_"):
+            base_name = raw_video_id
+        else:
+            base_name = f"{folder_chua_vid}_{raw_video_id}"
+            
         print(f"\n[{folder_chua_vid} / {video_file}] Đang xử lý Vector Extraction...")
         
         # Copy file về SSD local để tránh nghẽn I/O khi đọc frame
@@ -49,11 +52,11 @@ def process_vector_pipeline():
         print(" ⏳ Đang copy video xuống SSD để đọc tuần tự...")
         shutil.copy2(drive_video_path, local_video_path)
         
-        out_kf_dir = os.path.join(DRIVE_KEYFRAMES_VECTOR_FOLDER, folder_chua_vid, f"{video_id}_vector_frames")
+        out_kf_dir = os.path.join(DRIVE_KEYFRAMES_VECTOR_FOLDER, folder_chua_vid, f"{base_name}_vector_frames")
         os.makedirs(out_kf_dir, exist_ok=True)
         
         # Thư mục nháp để chứa frame ứng viên tạm thời
-        tmp_frames_dir = os.path.join(LOCAL_TEMP_FOLDER, f"tmp_{video_id}")
+        tmp_frames_dir = os.path.join(LOCAL_TEMP_FOLDER, f"tmp_{base_name}_frames")
         os.makedirs(tmp_frames_dir, exist_ok=True)
 
         try:
@@ -140,7 +143,7 @@ def process_vector_pipeline():
                 
                 # Lưu file chiến thắng sang ổ Google Drive theo đúng chuẩn ID
                 frame_id = best_candidate["frame_idx"]
-                final_name = f"{folder_chua_vid}_{video_id}_{frame_id:05d}.jpg"
+                final_name = f"{base_name}_{frame_id:05d}.jpg"
                 final_path = os.path.join(out_kf_dir, final_name)
                 
                 shutil.copy2(best_candidate["img_path"], final_path)

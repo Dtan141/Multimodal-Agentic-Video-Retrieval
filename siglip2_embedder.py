@@ -5,7 +5,7 @@ from typing import Any, Iterable
 import torch
 import torch.nn.functional as F
 from PIL import Image
-from transformers import AutoModel, AutoProcessor
+from transformers import AutoModel, AutoImageProcessor
 
 
 class Siglip2Embedder:
@@ -26,7 +26,7 @@ class Siglip2Embedder:
         dtype = torch.float16 if self.use_fp16 else torch.float32
         print(f"🚀 Loading {model_id} on {self.device} | fp16={self.use_fp16}")
 
-        self.processor = AutoProcessor.from_pretrained(model_id)
+        self.processor = AutoImageProcessor.from_pretrained(model_id)
 
         self.model = AutoModel.from_pretrained(
             model_id,

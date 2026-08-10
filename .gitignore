@@ -3,6 +3,7 @@ debug_outputs/
 debug_pyscenedetect/
 metadata/
 TransNetV2/
+workspace/
 
 videos/
 test*/

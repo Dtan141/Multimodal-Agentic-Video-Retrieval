@@ -13,8 +13,10 @@ from PIL import Image
 # --- BƯỚC LỌC AN TOÀN CHO FLORENCE-2 ---
 import transformers
 import transformers.dynamic_module_utils as dynamic_utils
-from transformers import AutoProcessor, AutoModelForCausalLM
+from transformers import AutoProcessor, AutoModelForCausalLM, PretrainedConfig
 from sentence_transformers import SentenceTransformer, util
+
+PretrainedConfig.forced_bos_token_id = None
 
 orig_get_imports = dynamic_utils.get_imports
 def custom_get_imports(filename):
@@ -28,7 +30,7 @@ dynamic_utils.get_imports = custom_get_imports
 HISTOGRAM_THRESHOLD = 0.90
 BASE_WORKSPACE = r"G:\.shortcut-targets-by-id\11I5_AMfAufb6crT2hzGrLEI3tMsTsKjX\AIC2026"
 
-DRIVE_INPUT_FOLDER = os.path.join(BASE_WORKSPACE, "OldData\L28") # Trực tiếp folder chứa video
+DRIVE_INPUT_FOLDER = os.path.join(BASE_WORKSPACE, "test\L01") # Trực tiếp folder chứa video
 DRIVE_OUTPUT_FOLDER = os.path.join(BASE_WORKSPACE, "metadata")
 DRIVE_KEYFRAMES_META_FOLDER = os.path.join(BASE_WORKSPACE, "keyframes_meta")
 LOCAL_TEMP_FOLDER = "temp_processing_videos"
@@ -145,13 +147,13 @@ def group_shots_to_segments(shots, threshold=0.75):
             
     return segments
 
-def save_tournament_winner(winner_data, folder_vid, video_id, seg_id, kf_meta_dir, seg_ref):
+def save_tournament_winner(winner_data, base_name, seg_id, kf_meta_dir, seg_ref):
     """Hàm lưu frame xuất sắc nhất vào ổ cứng và update JSON"""
     frame_idx, frame_img = winner_data[0], winner_data[1]
     seg_id_clean = seg_id.replace("_", "")
     
     # Format chuẩn AIC: <vid>_<seg>_<frameid>.jpg
-    img_name = f"{video_id}_{seg_id_clean}_{frame_idx:05d}.jpg"
+    img_name = f"{base_name}_{frame_idx:05d}.jpg"
     img_path = os.path.join(kf_meta_dir, img_name)
     
     cv2.imwrite(img_path, frame_img)
@@ -176,17 +178,30 @@ def process_all_videos():
 
     for drive_video_path in video_paths:
         video_file = os.path.basename(drive_video_path)
-        video_id = os.path.splitext(video_file)[0]
-        
+        raw_video_id = os.path.splitext(video_file)[0]
         folder_chua_vid = os.path.basename(os.path.dirname(drive_video_path))
+        
+        if raw_video_id.startswith(f"{folder_chua_vid}_"):
+            base_name = raw_video_id
+        else:
+            base_name = f"{folder_chua_vid}_{raw_video_id}"
             
+        # --- BƯỚC MỚI: KIỂM TRA ĐÃ CHẠY CHƯA ---
+        # Kiểm tra xem file JSON metadata đã tồn tại ở đích chưa
+        out_json_dir = os.path.join(DRIVE_OUTPUT_FOLDER, folder_chua_vid)
+        expected_json_path = os.path.join(out_json_dir, f"{base_name}.json")
+        
+        if os.path.exists(expected_json_path):
+            print(f"⏩ [SKIP] Video {video_file} đã được xử lý (đã thấy file {base_name}.json). Bỏ qua...")
+            continue # Lệnh này sẽ ép vòng lặp nhảy sang video tiếp theo ngay lập tức
+        
         print(f"\n[{folder_chua_vid} / {video_file}] Đang bắt đầu xử lý...")
         local_video_path = os.path.join(LOCAL_TEMP_FOLDER, video_file)
         
         print(" ⏳ Đang copy video xuống SSD để tối ưu tốc độ...")
         shutil.copy2(drive_video_path, local_video_path)
         
-        kf_meta_dir = os.path.join(DRIVE_KEYFRAMES_META_FOLDER, folder_chua_vid, f"{video_id}_keyframes")
+        kf_meta_dir = os.path.join(DRIVE_KEYFRAMES_META_FOLDER, folder_chua_vid, f"{base_name}_keyframes")
         os.makedirs(kf_meta_dir, exist_ok=True)
         
         try:
@@ -272,7 +287,7 @@ def process_all_videos():
                     if current_seg_id != seg_id:
                         if basket:
                             winner = max(basket, key=lambda x: x[2])
-                            save_tournament_winner(winner, folder_chua_vid, video_id, current_seg_id, kf_meta_dir, winner[3])
+                            save_tournament_winner(winner, base_name, current_seg_id, kf_meta_dir, winner[3])
                             basket = []
                         current_seg_id = seg_id
                         prev_hist = None
@@ -290,7 +305,7 @@ def process_all_videos():
                         else:
                             # Histogram thay đổi -> Có hành động mới -> Chốt giỏ cũ, chọn 1 tấm nét nhất
                             winner = max(basket, key=lambda x: x[2])
-                            save_tournament_winner(winner, folder_chua_vid, video_id, current_seg_id, kf_meta_dir, winner[3])
+                            save_tournament_winner(winner, base_name, current_seg_id, kf_meta_dir, winner[3])
                             
                             # Cho frame hiện tại vào giỏ mới
                             basket = [(current_frame, frame.copy(), lap_score, seg_ref)]
@@ -303,7 +318,7 @@ def process_all_videos():
             # Xả giỏ cuối cùng khi video kết thúc
             if basket:
                 winner = max(basket, key=lambda x: x[2])
-                save_tournament_winner(winner, folder_chua_vid, video_id, current_seg_id, kf_meta_dir, winner[3])
+                save_tournament_winner(winner, base_name, current_seg_id, kf_meta_dir, winner[3])
                 
             cap.release()
             print(f"     ✅ Đã hoàn tất! Ứng cử viên được lấy theo quy tắc và đã qua bộ lọc trùng lặp.")
@@ -315,18 +330,18 @@ def process_all_videos():
             video_rel_path = os.path.join(folder_chua_vid, video_file).replace("\\", "/")
             
             final_data = {
-                "video_id": video_id,
+                "video_id": base_name,
                 "type": "video",
                 "video_path": video_rel_path,
-                "keyframes_folder_path": f"{folder_chua_vid}/{video_id}_keyframes", 
-                "metadata_path": f"{folder_chua_vid}/{video_id}.json",
+                "keyframes_folder_path": f"{folder_chua_vid}/{base_name}_keyframes", 
+                "metadata_path": f"{folder_chua_vid}/{base_name}.json",
                 "fps": round(fps, 2),
                 "segments": segments_data
             }
             
             out_json_dir = os.path.join(DRIVE_OUTPUT_FOLDER, folder_chua_vid)
             os.makedirs(out_json_dir, exist_ok=True)
-            output_json_path = os.path.join(out_json_dir, f"{video_id}.json")
+            output_json_path = os.path.join(out_json_dir, f"{base_name}.json")
             
             with open(output_json_path, "w", encoding="utf-8") as f:
                 json.dump(final_data, f, ensure_ascii=False, indent=4)
