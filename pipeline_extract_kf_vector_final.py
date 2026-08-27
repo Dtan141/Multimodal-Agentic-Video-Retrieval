@@ -7,32 +7,51 @@ from PIL import Image
 import gc
 from sklearn.cluster import DBSCAN
 
-# --- CẤU HÌNH ĐƯỜNG DẪN DỮ LIỆU ---
-BASE_WORKSPACE = r"G:\.shortcut-targets-by-id\11I5_AMfAufb6crT2hzGrLEI3tMsTsKjX\AIC2026"
+# ============================================================
+# CẤU HÌNH HUGGING FACE
+# ============================================================
+HF_REPO_ID = "Chillguy2026/dataset_video"
+TARGET_FOLDERS = ["Videos_L25"]
 
+# ============================================================
+# CẤU HÌNH ĐƯỜNG DẪN
+# ============================================================
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_WORKSPACE = os.path.join(CURRENT_DIR, "workspace")
 # Đầu vào và Đầu ra
-DRIVE_INPUT_FOLDER = os.path.join(BASE_WORKSPACE, "test\L01")
-DRIVE_KEYFRAMES_VECTOR_FOLDER = os.path.join(BASE_WORKSPACE, "keyframes_vector")
-LOCAL_TEMP_FOLDER = "temp_vector_processing"
+LOCAL_DATASET_DIR = os.path.join(BASE_WORKSPACE, "hf_downloaded_videos")
+KEYFRAMES_VECTOR_FOLDER = os.path.join(BASE_WORKSPACE, "keyframes_vector")
+LOCAL_TEMP_FOLDER = os.path.join(
+    BASE_WORKSPACE,
+    "temp_vector_processing",
+)
 
-# Cấu hình thuật toán
-FRAME_INTERVAL = 20          # Lấy mẫu mỗi 20 frame
-PHASH_EPS = 6                # Ngưỡng khoảng cách Hamming tối đa (0-64) cho DBSCAN
-
-os.makedirs(DRIVE_INPUT_FOLDER, exist_ok=True)
-os.makedirs(DRIVE_KEYFRAMES_VECTOR_FOLDER, exist_ok=True)
+os.makedirs(LOCAL_DATASET_DIR, exist_ok=True)
+os.makedirs(KEYFRAMES_VECTOR_FOLDER, exist_ok=True)
 os.makedirs(LOCAL_TEMP_FOLDER, exist_ok=True)
 
+# ============================================================
+# CẤU HÌNH THUẬT TOÁN
+# ============================================================
+FRAME_INTERVAL = 20          # Lấy mẫu mỗi 20 frame
+PHASH_EPS = 6                # Ngưỡng khoảng cách Hamming 
+JPEG_QUALITY = 85
+
+VIDEO_EXTENSIONS = (".mp4", ".avi", ".mkv",)
+
+# ============================================================
+# HELPER
+# ============================================================
 def process_vector_pipeline():
     # 1. Tìm tất cả các file video trong thư mục
     video_paths = []
-    for root, dirs, files in os.walk(DRIVE_INPUT_FOLDER):
+    for root, dirs, files in os.walk(LOCAL_DATASET_DIR):
         for f in files:
             if f.lower().endswith(('.mp4', '.avi', '.mkv')):
                 video_paths.append(os.path.join(root, f))
 
     if not video_paths:
-        print(f"⚠️ Không tìm thấy video nào trên Drive '{DRIVE_INPUT_FOLDER}'.")
+        print(f"⚠️ Không tìm thấy video nào trên Drive '{LOCAL_DATASET_DIR}'.")
         return
 
     for drive_video_path in video_paths:
@@ -52,7 +71,7 @@ def process_vector_pipeline():
         print(" ⏳ Đang copy video xuống SSD để đọc tuần tự...")
         shutil.copy2(drive_video_path, local_video_path)
         
-        out_kf_dir = os.path.join(DRIVE_KEYFRAMES_VECTOR_FOLDER, folder_chua_vid, f"{base_name}_vector_frames")
+        out_kf_dir = os.path.join(KEYFRAMES_VECTOR_FOLDER, folder_chua_vid, f"{base_name}_vector_frames")
         os.makedirs(out_kf_dir, exist_ok=True)
         
         # Thư mục nháp để chứa frame ứng viên tạm thời

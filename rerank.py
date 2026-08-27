@@ -10,7 +10,7 @@ from PIL import Image
 from rank_bm25 import BM25Okapi
 from transformers import AutoProcessor, AutoModel
 from sentence_transformers import CrossEncoder
-from siglip2_embedder import Siglip2Embedder
+from siglip2_embedder_v1 import Siglip2Embedder
 
 class DualStreamSearcher:
     @staticmethod

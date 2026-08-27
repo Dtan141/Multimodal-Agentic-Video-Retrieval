@@ -1,0 +1,9 @@
+streamlit>=1.47
+numpy
+pandas
+requests
+opencv-python
+huggingface_hub
+Pillow
+torch
+transformers

@@ -10,7 +10,7 @@ import numpy as np
 from PIL import Image, UnidentifiedImageError
 from tqdm import tqdm
 from transformers import AutoModel, AutoImageProcessor
-from siglip2_embedder import Siglip2Embedder
+from siglip2_embedder_v1 import Siglip2Embedder
 import torch.nn.functional as F
 import gc
 

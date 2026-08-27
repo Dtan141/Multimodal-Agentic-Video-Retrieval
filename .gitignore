@@ -3,6 +3,8 @@ debug_outputs/
 debug_pyscenedetect/
 metadata/
 TransNetV2/
+workspace_vector/
+workspace_vector_*/
 workspace/
 
 videos/

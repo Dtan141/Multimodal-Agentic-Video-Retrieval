@@ -10,71 +10,59 @@ from transformers import AutoImageProcessor, AutoModel, AutoTokenizer
 
 
 class Siglip2Embedder:
-    def __init__(self, model_id: str = "google/siglip2-base-patch16-224", device: str | None = None, use_fp16: bool = True, text_max_length: int = 64) -> None:
+    """SigLIP2 wrapper used by both the offline embedding pipeline and query search."""
+
+    def __init__(
+        self,
+        model_id: str = "google/siglip2-base-patch16-224",
+        device: str | None = None,
+        use_fp16: bool = True,
+        text_max_length: int = 64,
+        load_image_processor: bool = True,
+    ) -> None:
         self.model_id = model_id
         self.device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
         self.use_fp16 = bool(use_fp16) and self.device.startswith("cuda")
-        self.text_max_length = text_max_length
-
-        model_dtype = torch.float16 if self.use_fp16 else torch.float32
-
-        print(f"🚀 Loading {model_id} on {self.device} | fp16={self.use_fp16}")
-
-        # Image preprocessing
-        self.image_processor = AutoImageProcessor.from_pretrained(model_id)
-
-        self.tokenizer = AutoTokenizer.from_pretrained(
-            model_id,
-            use_fast=False,
+        self.text_max_length = int(text_max_length)
+        self.image_processor = (
+            AutoImageProcessor.from_pretrained(model_id)
+            if load_image_processor
+            else None
         )
 
-        self.model = AutoModel.from_pretrained(
-            model_id,
-            torch_dtype=model_dtype,
-        ).to(self.device)
-
+        self.tokenizer = AutoTokenizer.from_pretrained(model_id, use_fast=False)
+        model_dtype = torch.float16 if self.use_fp16 else torch.float32
+        self.model = AutoModel.from_pretrained(model_id, torch_dtype=model_dtype).to(self.device)
         self.model.eval()
-      
 
     def _move_to_device(self, inputs: Any) -> Any:
         if hasattr(inputs, "to"):
             return inputs.to(self.device)
-
         if isinstance(inputs, dict):
             return {
                 key: value.to(self.device) if hasattr(value, "to") else value
                 for key, value in inputs.items()
             }
-
         return inputs
 
     def _autocast_context(self):
         if not self.use_fp16:
             return nullcontext()
-
-        return torch.autocast(
-            device_type="cuda",
-            dtype=torch.float16,
-        )
+        return torch.autocast(device_type="cuda", dtype=torch.float16)
 
     @staticmethod
     def _extract_pooled_features(output: Any) -> torch.Tensor:
         if isinstance(output, torch.Tensor):
             return output
-
-        if hasattr(output, "pooler_output") and output.pooler_output is not None:
+        if getattr(output, "pooler_output", None) is not None:
             return output.pooler_output
-
-        if hasattr(output, "image_embeds") and output.image_embeds is not None:
+        if getattr(output, "image_embeds", None) is not None:
             return output.image_embeds
-
-        if hasattr(output, "text_embeds") and output.text_embeds is not None:
+        if getattr(output, "text_embeds", None) is not None:
             return output.text_embeds
-
         if isinstance(output, tuple) and output and isinstance(output[0], torch.Tensor):
             return output[0]
-
-        raise TypeError(f"Không lấy được pooled embedding tensor từ output type: {type(output)}")
+        raise TypeError(f"Không lấy được pooled embedding từ output type: {type(output)}")
 
     @staticmethod
     def _normalize(features: torch.Tensor) -> torch.Tensor:
@@ -84,43 +72,31 @@ class Siglip2Embedder:
     def encode_images(self, images: list[Image.Image]) -> torch.Tensor:
         if not images:
             raise ValueError("encode_images() nhận list ảnh rỗng")
-
-        rgb_images = [image.convert("RGB") for image in images]
+        if self.image_processor is None:
+            raise RuntimeError("Image processor chưa được load cho instance này.")
 
         inputs = self.image_processor(
-            images=rgb_images,
+            images=[image.convert("RGB") for image in images],
             return_tensors="pt",
         )
-
         inputs = self._move_to_device(inputs)
-
         with self._autocast_context():
             output = self.model.get_image_features(**inputs)
-
-        return self._normalize(
-            self._extract_pooled_features(output)
-        )
+        return self._normalize(self._extract_pooled_features(output))
 
     @torch.inference_mode()
     def encode_texts(self, texts: list[str]) -> torch.Tensor:
         if not texts:
             raise ValueError("encode_texts() nhận list text rỗng")
 
-        clean_texts = [str(text).strip().lower() for text in texts]
-
         inputs = self.tokenizer(
-            clean_texts,
+            [str(text).strip().lower() for text in texts],
             return_tensors="pt",
             padding="max_length",
             truncation=True,
             max_length=self.text_max_length,
         )
-
         inputs = self._move_to_device(inputs)
-
         with self._autocast_context():
             output = self.model.get_text_features(**inputs)
-
-        return self._normalize(
-            self._extract_pooled_features(output)
-        )
+        return self._normalize(self._extract_pooled_features(output))
