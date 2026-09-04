@@ -1,20 +1,11 @@
 temp_processing_videos/
-debug_outputs/
-debug_pyscenedetect/
+workspace/
 metadata/
 TransNetV2/
-workspace_vector/
-workspace_vector_*/
-workspace/
 
 videos/
-test*/
-tune_*/
-tune*.py
 
 venv/
 __pycache__/
 *.py[cod]
 
-reviewer.py
-temp_segments.vtt
