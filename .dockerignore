@@ -1,0 +1,13 @@
+**/__pycache__/
+**/*.pyc
+**/.venv/
+**/venv/
+**/node_modules/
+frontend/.next/
+database/
+!database/index/
+*.egg-info/
+.git/
+test/
+data_processing/
+vector_embeddings/

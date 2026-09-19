@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aic-retrieval"
+version = "0.1.0"
+description = "AIC 2026 multimedia retrieval backend (SigLIP2 + FAISS + hybrid search + agent)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "pydantic>=2.5",
+    "pydantic-settings>=2.2",
+    "pyyaml>=6.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+# FAISS index + metadata store (WS2). No torch needed to build/search vectors.
+index = [
+    "faiss-cpu>=1.8",
+    "pandas>=2.0",
+    "pyarrow>=15",
+]
+# Metadata ingestion + per-module BM25 (WS3).
+text = [
+    "rank-bm25>=0.2.2",
+    "huggingface_hub>=0.24",
+]
+# Model / embedding stack (WS4+). torch is installed separately with the CUDA
+# index-url (see backend/README.md); kept out of hard deps to avoid the CPU wheel.
+ml = [
+    "transformers==4.44.2",
+    "sentence-transformers>=3.0",
+    "sentencepiece>=0.2",
+    "pillow>=10",
+]
+# API + HF asset access.
+api = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx>=0.27",
+    "huggingface_hub>=0.24",
+    "opencv-python>=4.9",
+]
+dev = [
+    "pytest>=8",
+    "ruff>=0.5",
+]
+
+[project.scripts]
+aic = "aic_retrieval.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]

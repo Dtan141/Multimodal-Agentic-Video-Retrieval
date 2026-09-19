@@ -6,6 +6,21 @@ TransNetV2/
 videos/
 
 venv/
+.venv/
 __pycache__/
 *.py[cod]
 
+# packaging / env / data artifacts
+*.egg-info/
+.env
+backend/.env
+database/index/
+database/metadata/
+database/metadata_clean/
+
+# large / derived data: vector_embeddings holds >100 MB files and broken Linux symlinks
+database/
+
+# local-only
+.claude/settings.local.json
+*.stackdump

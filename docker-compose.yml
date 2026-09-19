@@ -1,0 +1,28 @@
+# Demo compose (CPU). The API serves from the prebuilt, self-contained index at
+# ./database/index (vectors.faiss + frames.parquet + text/*). Build it first with
+# `aic build-index` + `aic ingest-metadata` on the host.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - AIC_GROQ_MODEL=${AIC_GROQ_MODEL:-qwen/qwen3.8-27b}
+    volumes:
+      - ./database/index:/app/database/index:ro          # prebuilt FAISS + BM25 + hydration
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface  # HF token + SigLIP model cache
+    # For GPU: add `gpus: all` and use a CUDA-based backend image.
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - API_BASE=http://api:8000
+    depends_on:
+      - api

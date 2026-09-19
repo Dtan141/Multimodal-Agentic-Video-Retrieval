@@ -1,0 +1,36 @@
+# Default configuration for the AIC retrieval backend.
+# Override any value with an env var (prefix AIC_, e.g. AIC_TOP_K=200) or a .env file.
+# Secrets (GROQ_API_KEY) belong in the environment / .env, NOT here.
+
+# ---- paths (relative paths are resolved from the repo root at load time) ----
+# Leave commented to use the code defaults under <repo>/database/.
+# embeddings_dir: database/vector_embeddings
+# index_dir: database/index
+# metadata_dir: database/metadata
+
+# ---- embedding model ----
+model_id: google/siglip2-base-patch16-224
+text_max_length: 64
+use_fp16: true
+# device: cuda:0        # omit for auto-detect
+
+# ---- retrieval / fusion ----
+top_k: 100
+rrf_k: 60
+temporal_margin: 3
+cross_encoder_model: cross-encoder/ms-marco-MiniLM-L-6-v2
+
+# ---- Hugging Face datasets ----
+hf_image_repo_id: Chillguy2026/AIC_2026_data
+hf_image_repo_type: dataset
+hf_image_root: keyframe_vector
+hf_metadata_repo_id: Chillguy2026/AIC_2026_metadata
+hf_metadata_repo_type: dataset
+
+# ---- agent LLM (Groq free tier, OpenAI-compatible) ----
+groq_base_url: https://api.groq.com/openai/v1
+groq_model: qwen/qwen3.8-27b   # Groq free tier; strong Vietnamese + JSON
+llm_timeout: 30.0
+
+# ---- misc ----
+log_level: INFO
