@@ -1,8 +1,8 @@
 # AIC 2026 — Intelligent Multimedia Retrieval
 
-A video moment–retrieval system for the **Ho Chi Minh City AI Challenge 2026**
-(LSC/VBS-style): find the exact keyframe answering a natural-language query over a
-large broadcast-video corpus, then export a competition submission.
+A video moment–retrieval system for the **Ho Chi Minh City AI Challenge 2026**: find the
+exact keyframe answering a natural-language query over a large broadcast-video corpus,
+then export a competition submission.
 
 It combines **semantic search** (SigLIP2 + FAISS) with **metadata search** over
 per-frame OCR / ASR / object-detection / captions (BM25), fuses them with
@@ -120,28 +120,102 @@ sequenceDiagram
 
 ## Modules
 
-> The following upstream modules produce the data this system indexes.
-> **(Sections intentionally left blank — to be filled in.)**
+> The following upstream modules produce the data this system indexes. They run offline,
+> outside the serving path — the backend only ingests and indexes their output.
 
 ### ASR
 
-_TBD._
+Benchmarked **Zipformer**, **Wav2Vec2** and **PhoWhisper-small** on **VLSP** and **VIVOS**.
+Selected **Zipformer** for the best accuracy/throughput balance on offline batch transcription
+of the full corpus.
+
+Output is attached per segment as `speech[]` with `text_norm`, `keywords` and `entities`,
+plus a `keep` flag marking junk utterances. `aic clean-metadata` drops `keep=false` speech
+and strips the raw/debug fields, taking the ASR corpus from ~45K to ~42K documents.
+Because ASR is segment-level, `ingest-metadata` fans each hit out to every keyframe in that
+segment before ranking.
 
 ### Object detection
 
-_TBD._
+**YOLOv8m pretrained on VG150**, taken from the
+[SGG-Benchmark](https://github.com/Maelic/SGG-Benchmark) model zoo
+(`VG150_yolov8m_backbone.pt`, **mAP@50 36.82** on the VG150 test set) — no training of our
+own. It runs over the metadata keyframes and stores one entry per detection —
+`{label, box, score}` — under each keyframe in the per-video JSON.
+
+VG150 is the standard **Visual Genome** subset used in scene-graph work: a **closed vocabulary
+of 150 English object classes**. That bounds what this module can ever match — there is no
+`microphone` hit if `microphone` is not one of the 150 — which is exactly why it is a
+*complement* to caption search rather than a replacement.
+
+Picking an SGG backbone was deliberate: the plan was to use **relative spatial position**
+between detections ("person to the left of the car"), which is what scene-graph generation is
+built for, and boxes were stored for it. That signal is **not used by the current retrieval path**:
+`_object_labels` keeps only `label`, de-duplicates while preserving order, and joins the
+labels into a single BM25 document per keyframe
+([`text/ingest_metadata.py:40`](backend/src/aic_retrieval/text/ingest_metadata.py#L40)).
+Coordinates and confidence scores are carried in the metadata but never read.
+
+Labels are **English**, which is why the agent routes English keywords to `object_search`
+while keeping Vietnamese for `ocr`/`asr`. The module earns its place by catching scene
+composition that captions gloss over — a caption may describe the subject and skip the
+`screen`, `desk` and `chair` that pin down a studio shot.
 
 ### OCR
 
-_TBD._
+Benchmarked a classic **two-stage pipeline** (text detector + recognizer) against
+**vision-language models**, and selected **Qwen3.5-2B** for markedly better recognition on
+noisy broadcast overlays — stylised fonts, tickers and low-contrast captions where the
+two-stage route degraded.
+
+**Post-processing matters as much as the model here.** Raw OCR is dominated by station
+watermarks that appear on nearly every frame and carry no retrieval signal, and a VLM
+occasionally leaks its own JSON scaffolding into the text. Two passes clean this up:
+
+- `aic analyze-metadata` ranks tokens per folder by **keyframe fraction** — the share of that
+  folder's keyframes a token appears on — and proposes anything above **0.30** as a stoplist
+  candidate. Ratio, not raw document frequency, so common Vietnamese words are not swept up.
+- `aic clean-metadata` applies that auto stoplist together with a curated global list
+  (`htv`, `htv9`, `htvonline`, `tuoitretv`, `mekong`, … plus VLM artifacts such as `json`,
+  `bbox_2d`, `label`, `score`, `text_content`) and writes `database/metadata_clean/`.
+
+Net effect: **193K → 116K OCR documents**, removing ~77K keyframes whose text was watermark
+only. The generated report and stoplist are kept at `database/index/preprocess/` for review.
 
 ### Image-Text Shared Embeddings
 
-_TBD._
+**SigLIP2** (`google/siglip2-base-patch16-224`) embeds images and text into one space, so a
+text query can be matched against keyframes directly. Sigmoid-loss contrastive training and
+stronger multilingual coverage than CLIP were the reasons for picking it.
+
+Both `get_image_features` and `get_text_features` are **L2-normalized**, which makes cosine
+similarity equal to inner product — hence FAISS `IndexFlatIP` gives exact cosine ranking.
+fp16 on CUDA, fp32 on CPU. Frames are embedded from the **decoded array before JPEG
+compression** (batch 16) so the stored thumbnail never degrades the vector. Each folder
+yields a `.npz` (`vectors` + `frame_ids`) and a `.jsonl` sidecar, which `aic build-index`
+merges into the FAISS index and `frames.parquet`.
 
 ### Keyframe selection methods
 
-_TBD._
+Two **independent** keyframe sets are extracted from the same source videos, each tuned for
+what consumes it:
+
+**Vector set** (`pipeline_kf_vector_embed_anchor.py`) — feeds SigLIP2/FAISS. An anchor is
+placed every `FRAME_STRIDE = 30` frames; within `±SHARPNESS_RADIUS = 14` around it, the frame
+with the highest **Laplacian variance** wins. A non-overlapping sharpest-frame sampler: even
+temporal coverage, no motion-blurred frames, no clustering on busy scenes.
+
+**Metadata set** (`pipeline_extract_segment_final.py`) — feeds OCR/ASR/object/caption.
+**TransNetV2** detects shot boundaries; one mid-shot frame per shot is captioned by
+**Florence-2** (`<MORE_DETAILED_CAPTION>`); **all-MiniLM-L6-v2** embeds those captions and
+consecutive shots with cosine `≥ 0.4` are merged into semantic **segments**. Candidate frames
+per segment then pass a tournament filter — **HSV histogram correlation `≥ 0.90`** drops
+near-duplicates, Laplacian variance picks the sharpest survivor — with `≥ 3` keyframes per
+segment and a maximum interval of `20`.
+
+The two sets therefore have **different `frame_id` spaces for the same video**. Fusion keys on
+`(video_id, frame_id)` and collapses neighbours within a `±temporal_margin` window, so a
+semantic hit and a metadata hit on the same moment merge instead of competing.
 
 ---
 
